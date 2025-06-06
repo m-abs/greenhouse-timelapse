@@ -21,6 +21,7 @@ ERROR_MAIL=$3
 FILE_LIST="${OUTPUT_BASE_PATH}/file_list.txt"
 
 OUTPUT_DIR="${OUTPUT_BASE_PATH}/$(date +"%Y-%m-%d")"
+OUTPUT_DIR_TMP="${OUTPUT_DIR}/tmp"
 OUTPUT_DATE_VIDEO="${OUTPUT_DIR}/day.mkv"
 OUTPUT_VIDEO_PATH="${OUTPUT_BASE_PATH}/timelapse.mkv"
 
@@ -35,8 +36,8 @@ function SendErrorMail {
   cat ${LOG_FILE} | mail -s $subject ${ERROR_MAIL}
   exit 1
 }
- 
-mkdir -p ${OUTPUT_DIR}
+
+mkdir -p ${OUTPUT_DIR_TMP}
 
 # Prime the camera
 for I in {1..3}; do
@@ -44,19 +45,21 @@ for I in {1..3}; do
 done
 
 # Take the photo
-if ! wget -P "${OUTPUT_DIR}" "${URL}" --content-disposition -a ${LOG_FILE}; then
+if ! wget -P "${OUTPUT_DIR_TMP}" "${URL}" --content-disposition -a ${LOG_FILE}; then
   SendErrorMail
 fi
 
+for IMAGE_FILE in "${OUTPUT_DIR_TMP}"/*.jpg; do
+  BASENAME=$(basename "${IMAGE_FILE}")
+  IMAGE_FILE_WITH_LABEL="${OUTPUT_DIR}/${BASENAME}"
+
+  if [[ ! -f "${IMAGE_FILE_WITH_LABEL}" ]]; then
+    ./add_datetime_to_jpg.sh ${IMAGE_FILE} "${OUTPUT_DIR}"
+  fi
+done
+
 # Make the timelapse video of the day
-if ! ffmpeg \
-  -framerate 25 \
-  -pattern_type glob \
-  -i "${OUTPUT_DIR}/*.jpg" \
-  -c:v hevc \
-  -crf 0 \
-  -y "${OUTPUT_DATE_VIDEO}" \
-  -loglevel info 2>> ${LOG_FILE}; then
+if ! ./make_day_timelapse.sh $OUTPUT_DIR $OUTPUT_DATE_VIDEO $LOG_FILE; then
   SendErrorMail
 fi
 
@@ -64,11 +67,11 @@ fi
 
 ## Make the file list for ffmpeg
 (
-  cd "${OUTPUT_BASE_PATH}" && \
-  find . -mindepth 2 -name "*.mkv" |\
-  sort |\
-  xargs -i echo "file '{}'"
-) > ${FILE_LIST}
+  cd "${OUTPUT_BASE_PATH}" &&
+    find . -mindepth 2 -name "*.mkv" |
+    sort |
+      xargs -i echo "file '{}'"
+) >${FILE_LIST}
 
 ## Concat the videos
 if ! ffmpeg \
@@ -77,6 +80,6 @@ if ! ffmpeg \
   -i ${FILE_LIST} \
   -c copy \
   -y ${OUTPUT_VIDEO_PATH} \
-  -loglevel info 2>> ${LOG_FILE}; then
+  -loglevel info 2>>${LOG_FILE}; then
   SendErrorMail
 fi
