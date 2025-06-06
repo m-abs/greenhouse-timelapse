@@ -1,5 +1,9 @@
 {
     "[csharp]": {
         "editor.formatOnSave": true
-    }
+    },
+    "cSpell.words": [
+        "loglevel",
+        "timelapse"
+    ]
 }
